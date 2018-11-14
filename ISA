@@ -1,0 +1,134 @@
+Ref: https://www.inf.ethz.ch/personal/wirth/FPGA-relatedWork/RISC-Arch.pdf
+And: https://github.com/pdewacht/oberon-risc-emu/blob/master/src/risc.c
+
+Program Counter PC, 22 Bits
+Flags N, Z, C, V
+Register 0..15, 32 Bits
+Helper Reg. H, 32 Bits
+Save PC SPC: 26 Bits (N, Z, C, V, PC)
+Interrupt enable: I
+
+PC points to a (32 bit) word, i.e. Instr. Byte Address is PC<<2
+
+A. Register Instructions
+
+When writing to R.a the N (negative) and Z (zero) flags are set. ADD and SUB set the C (carry, borrow) and V (overflow) flags too.
+
+When adrssing is "immedeate minus" i = !j+1 (two's complement)
+
+0 a b 0 0 0 0 c 	MOV R.a, R.c		R.a <- R.c			  ; Move register
+2 a b 0 0 0 0 c		MOV R.a, H		R.a <- H			  ; Move helper register
+3 a b 0 0 0 0 c		MOF R.a 		R.a <- [N, Z, C, V, ..., 0x53]	  ; Move flags - 0x53 from RISC5.v Verilog
+4 a b 0 i i i i		MOV R.a, #i		R.a <- i			  ; Move immediate (0-extended)
+5 a b 0 i i i i		MOV R.a, #-j		R.a <- 0xffff0000 | C(j)	  ; Move immediate 1-extended ('minus')
+6 a b 0 i i i i         MVH R.a, #i		R-a <- i << 16	  		  ; Move immediate to high half
+
+0 a b 1 0 0 0 c		LSL R.a, R.b, R.c	R.a <- R.b << R.c		  ; Logical shift left
+4 a b 1 i i i i		LSL R.a, R.b, #i	R.a <- R.b << i			  ; Logical shift left immediate
+5 a b 1 i i i i		LSL R.a, R.b, #-j	R.a <- R.b << 0xffff0000 | C(j)	  ; Logical shift left immediate minus
+
+0 a b 2 0 0 0 c		ASR R.a, R.b, R.c	R.a <- R.b >> R.c | R.b[31|	  ; Arithmetic shift right
+4 a b 2 i i i i		ASR R.a, R.b, #i	R.a <- R.b >> i | R.b[31|	  ; Arithmetic shift right immediate
+5 a b 2 i i i i		ASR R.a, R.b, #-j	R.a <- R.b >> (0xffff0000 | C(j)) | R.b[31| ; Arithmetic shift right immediate minus
+
+0 a b 3 0 0 0 c		ROR R.a, R.b, R.c	R.a <- R.b ror R.c		  ; Rotate right
+4 a b 3 i i i i		ROR R.a, R.b, #i	R.a <- R.b ror i		  ; Rotate rigth immediate
+5 a b 3 i i i i		ROR R.a, R.b, #-j	R.a <- R.b ror 0xffff0000 | C(j)  ; Rotate rigth immediate minus
+
+0 a b 4 0 0 0 c		AND R.a, R.b, R.c	R.a <- R.b & R.c		  ; Bitwise and
+4 a b 4 i i i i		AND R.a, R.b, #i	R.a <- R.b & i			  ; Bitwise and immediate
+5 a b 4 i i i i		AND R.a, R.b, #-j	R.a <- R.b & 0xffff0000 | C(j)	  ; Bitwise and immediate minus
+
+0 a b 5 0 0 0 c		ANN R.a, R.b, R.c	R.a <- R.b & ~R.c		  ; Bitwise and not
+4 a b 5 i i i i		ANN R.a, R.b, #i	R.a <- R.b & ~i			  ; Bitwise and not immediate
+5 a b 5 i i i i		ANN R.a, R.b, #-j	R.a <- R.b & ~(0xffff0000 | C(j)) ; Bitwise and not immediate minus
+
+0 a b 6 0 0 0 c		IOR R.a, R.b, R.c	R.a <- R.b | R.c		  ; Bitwise or
+4 a b 6 i i i i		IOR R.a, R.b, #i	R.a <- R.b | i			  ; Bitwise or immediate
+5 a b 6 i i i i		IOR R.a, R.b, #-j	R.a <- R.b | 0xffff0000 | C(j)	  ; Bitwise or immediate minus
+
+0 a b 7 0 0 0 c		XOR R.a, R.b, R.c	R.a <- R.b ^ R.c		  ; Bitwise xor
+4 a b 7 i i i i		XOR R.a, R.b, #i	R.a <- R.b ^ i			  ; Bitwise xor immediate
+5 a b 7 i i i i		XOR R.a, R.b, #-j	R.a <- R.b ^ 0xffff0000 | C(j)	  ; Bitwise xor immediate minus
+
+0 a b 8 0 0 0 c		ADD R.a, R.b, R.c	R.a <- R.b + R.c		  ; Integer add
+2 a b 8 0 0 0 c		ADC R.a, R.b, R.c	R.a <- R.b + R.c + C		  ; Integer add with carry
+4 a b 8 i i i i		ADD R.a, R.b, #i	R.a <- R.b + i			  ; Integer add immediate
+5 a b 8 i i i i		ADD R.a, R.b, #-j	R.a <- R.b + 0xffff0000 | C(j)	  ; Integer add immediate minus
+6 a b 8 i i i i		ADC R.a, R.b, #i	R.a <- R.b + i + C		  ; Integer add immediate with carry
+7 a b 8 i i i i		ADC R.a, R.b, #-j	R.a <- R.b + 0xffff0000 | C(j) + C; Integer add immediate minus with carry
+
+0 a b 9 0 0 0 c		SUB R.a, R.b, R.c	R.a <- R.b - R.c		  ; Integer subtract
+2 a b 9 0 0 0 c		SBB R.a, R.b, R.c	R.a <- R.b - R.c - C		  ; Integer subtract with borrow
+4 a b 9 i i i i		SUB R.a, R.b, #i	R.a <- R.b - i			  ; Integer subtract immediate
+5 a b 9 i i i i		SUB R.a, R.b, #-j	R.a <- R.b - 0xffff0000 | C(j)	  ; Integer subtract immediate minus
+6 a b 9 i i i i		SBB R.a, R.b, #i	R.a <- R.b - i - C		  ; Integer subtract immediate with borrow
+6 a b 9 i i i i		SBM R.a, R.b, #-j	R.a <- R.b - 0xffff0000 | C(j) - C; Integer subtract immediate with borrow
+
+0 a b A 0 0 0 c		MUL R.a, R.b, R.c	H, R.a <- R.b x R.c		  ; Signed integer multiply (high word in H)
+2 a b A 0 0 0 c		UML R.a, R.b, R.c	H, R.a <- R.b x R.c		  ; Unsigned integer multiply (high word in H)
+4 a b A i i i i		MUL R.a, R.b, #i	H, R.a <- R.b x i		  ; Signed integer multiply immediate (high word in H)
+5 a b A i i i i		MUL R.a, R.b, #-j	H, R.a <- R.b x 0xffff0000 | C(j) ; Signed integer multiply immediate minus (... H)
+6 a b A i i i i		UML R.a, R.b, #i	H, R.a <- R.b x i		  ; Unsigned integer multiply immediate (high in H)
+7 a b A i i i i		UML R.a, R.b, #-j	H, R.a <- R.b x 0xffff0000 | C(j) ; Unsigned integer multiply immediate minus (... H)
+
+0 a b B 0 0 0 c		DIV R.a, R.b, R.c	R.a, H <- R.b / R.c		  ; Integer divide, rest in H
+4 a b B i i i i		DIV R.a, R.b, #i	R.a, H <- R.b / i		  ; Integer divide immediate, rest in H
+5 a b B i i i i		DIV R.a, R.b, #-j	R.a, H <- R.b / 0xffff0000 | C(j) ; Integer divide immediate minus, rest in H
+
+0 a b C 0 0 0 c		FAD R.a, R.b, R.c	R.a <- R.b + R.c		  ; Float add
+
+0 a b D 0 0 0 c		FSB R.a, R.b, R.c	R.a <- R.b - R.c		  ; Float subtract
+
+0 a b E 0 0 0 c		FML R.a, R.b, R.c	R.a <- R.b x R.c		  ; Float multiply
+
+0 a b F 0 0 0 c		FDV R.a, R.b, R.c	R.a <- R.b / R.c		  ; Float divide
+
+B. Memory Instructions
+
+8 a b o o o o o		LD  R.a, R.b + o	R.a <- M[R.b + o]		  ; Load word (o is signed)
+9 a b o o o o o		LDB R.a, R.b + o	R.a <- M[R.b + o] & 0xff	  ; Load byte (o is signed)
+
+A a b o o o o o		ST  R.a, R.b + o	M[R.b + o] <- R.a		  ; Store word (o is signed)
+B a b o o o o o		STB R.a, R.b + o	M[R.b + o] <- R.a & 0xff	  ; Store byte (o is signed)
+
+C. Branch instructions
+
+C x 0 0 0 0 0 c		Bxx R.c			PC <- R.c if condition xx	  ; Branch
+
+D x 0 0 0 0 0 x		Cxx R.c			R15 <- PC, PC <- R.c if cond. xx  ; Branch and link (call)
+
+E x o o o o o o		Bxx o			PC <- PC + 1 + o if cond xx  	  ; Branch relative (o is signed)
+F x o o o o o o		Cxx o			R15 <- PC, PC <- PC + 1 + o if xx ; Branch relative (o is signed) and link
+
+Condition codes (val x, code xx, desc, flags):
+
+0000 MI	  	minus (negative)   N
+0001 EQ	  	equal (zero)	   Z
+0010 CS		carry set (lower)  C
+0011 VS		overflow set	   V
+0100 LS		lower or same	   ~C|Z
+0101 LT		less than	   N!=V
+0110 LE		less or equal	   (N!=V)|Z
+0111 empty RA, AL always	   true
+1000 PL	 	plus (positive)	   ~N
+1001 NE		not equal	   ~Z
+1010 CC		carry clear	   ~C
+1011 VC		overflow clear 	   ~V
+1100 HI		higher	 	   ~(~C|Z)
+1101 GE		greater or equal   ~(N!=V)
+1110 GT		greater than	   ~((N!=V)|Z)
+1111 NV		never		   false
+
+D. Optional interrupt instructions
+
+Interrupt facility adds SPC save register for flags and PC plus the I (interrupt enable) flag
+
+Interrrupt					SPC <- flags,PC, PC <- 1	  ; Save flags, PC to special reg, jump to 2nd word
+C 7 0 0 0 0 1 c		RTI 			flags, PC <- SPC       		  ; Return from interrupt, restore flags & PC
+C F 0 0 0 0 2 0		CLI			I <- 0				  ; Clear interrupt enable flag
+C F 0 0 0 0 2 1		STI			I <- 1				  ; Set interrupt enable flag
+
+Implemntation hints:
+Sign extension: x = (x ^ sign_bit) - sign_bit, i.e. 20 -> 32:  off = (off ^ 0x00080000) - 0x00080000; 
+
