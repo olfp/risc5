@@ -1,4 +1,5 @@
 Ref: https://www.inf.ethz.ch/personal/wirth/FPGA-relatedWork/RISC-Arch.pdf
+And: https://www.inf.ethz.ch/personal/wirth/ProjectOberon/Sources/ORG.Mod.txt
 And: https://github.com/pdewacht/oberon-risc-emu/blob/master/src/risc.c
 
 Program Counter PC, 22 Bits
@@ -8,7 +9,9 @@ Helper Reg. H, 32 Bits
 Save PC SPC: 26 Bits (N, Z, C, V, PC)
 Interrupt enable: I
 
-PC points to a (32 bit) word, i.e. Instr. Byte Address is PC<<2
+PC points to a (32 bit) word, i.e. Instr. Byte Address is PC<<2 meaning Intr <- mem[PC << 2]
+
+Register Usage: R15: LNK (Subroutine Link Register), R14: SP (Stack Pointer, grows downward. Push is SUB SP, SP, 4; STR LNK, SP, 0)
 
 A. Register Instructions
 
@@ -86,20 +89,20 @@ When adrssing is "immedeate minus" i = !j+1 (two's complement)
 
 B. Memory Instructions
 
-8 a b o o o o o		LD  R.a, R.b + o	R.a <- M[R.b + o]		  ; Load word (o is signed)
+8 a b o o o o o		LDR R.a, R.b + o	R.a <- M[R.b + o]		  ; Load word (o is signed)
 9 a b o o o o o		LDB R.a, R.b + o	R.a <- M[R.b + o] & 0xff	  ; Load byte (o is signed)
 
-A a b o o o o o		ST  R.a, R.b + o	M[R.b + o] <- R.a		  ; Store word (o is signed)
+A a b o o o o o		STR R.a, R.b + o	M[R.b + o] <- R.a		  ; Store word (o is signed)
 B a b o o o o o		STB R.a, R.b + o	M[R.b + o] <- R.a & 0xff	  ; Store byte (o is signed)
 
 C. Branch instructions
 
-C x 0 0 0 0 0 c		Bxx R.c			PC <- R.c if condition xx	  ; Branch
+C x 0 0 0 0 0 c		Bxx R.c			PC <- R.c if condition xx	  ; Branch alias B to BR (Branch to register)
 
-D x 0 0 0 0 0 x		Cxx R.c			R15 <- PC, PC <- R.c if cond. xx  ; Branch and link (call)
+D x 0 0 0 0 0 x		Cxx R.c			R15 <- PC << 2, PC <- R.c if cond. xx  ; Branch and link (call) alias C to BLR
 
-E x o o o o o o		Bxx o			PC <- PC + 1 + o if cond xx  	  ; Branch relative (o is signed)
-F x o o o o o o		Cxx o			R15 <- PC, PC <- PC + 1 + o if xx ; Branch relative (o is signed) and link
+E x o o o o o o		Bxx o			PC <- PC + 1 + o if cond xx  	  ; Branch relative (o is signed) alias B to BC (Branch to const)
+F x o o o o o o		Cxx o			R15 <- PC << 2, PC <- PC + 1 + o if xx ; B 'n L relative (o is signed) and link alias C to BL
 
 Condition codes (val x, code xx, desc, flags):
 
@@ -110,7 +113,7 @@ Condition codes (val x, code xx, desc, flags):
 0100 LS		lower or same	   ~C|Z
 0101 LT		less than	   N!=V
 0110 LE		less or equal	   (N!=V)|Z
-0111 empty RA, AL always	   true
+0111 '', R,C    always	   	   true
 1000 PL	 	plus (positive)	   ~N
 1001 NE		not equal	   ~Z
 1010 CC		carry clear	   ~C
